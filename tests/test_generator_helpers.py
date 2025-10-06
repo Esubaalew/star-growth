@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 
 import pytest
 
@@ -38,6 +39,26 @@ def test_resolve_output_path_adds_extension(tmp_path, config_factory):
 
     assert resolved == tmp_path / "video_output.mp4"
     assert resolved.suffix == ".mp4"
+    assert config.output_format == "mp4"
+
+
+def test_resolve_output_path_supports_gif(tmp_path, config_factory):
+    config = config_factory(output=str(
+        tmp_path / "preview"), output_format="gif")
+
+    resolved = generator.resolve_output_path(config)
+
+    assert resolved.suffix == ".gif"
+    assert config.output_format == "gif"
+
+
+def test_resolve_output_path_infers_format_from_extension(tmp_path, config_factory):
+    config = config_factory(output=str(tmp_path / "custom.gif"))
+
+    resolved = generator.resolve_output_path(config)
+
+    assert resolved.name == "custom.gif"
+    assert config.output_format == "gif"
 
 
 def test_resolve_output_path_directory_hint(tmp_path, config_factory):
@@ -109,3 +130,29 @@ def test_prefetch_avatars_handles_empty(monkeypatch, config_factory):
     cache = generator.prefetch_avatars([], config_factory())
 
     assert cache == {}
+
+
+def test_filter_stargazers_by_date_inclusive():
+    stargazers = [
+        {"login": "old", "starred_at": "2024-01-01T00:00:00Z"},
+        {"login": "mid", "starred_at": "2024-01-02T12:00:00Z"},
+        {"login": "new", "starred_at": "2024-01-04T00:00:00Z"},
+    ]
+    start = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    end = datetime(2024, 1, 3, 23, 59, 59, tzinfo=timezone.utc)
+
+    filtered = generator._filter_stargazers_by_date(stargazers, start, end)
+
+    assert [sg["login"] for sg in filtered] == ["mid"]
+
+
+def test_filter_stargazers_by_date_ignores_unparseable_when_filtered():
+    stargazers = [
+        {"login": "bad", "starred_at": "invalid"},
+        {"login": "keep", "starred_at": "2024-01-05T00:00:00Z"},
+    ]
+    start = datetime(2024, 1, 4, tzinfo=timezone.utc)
+
+    filtered = generator._filter_stargazers_by_date(stargazers, start, None)
+
+    assert [sg["login"] for sg in filtered] == ["keep"]

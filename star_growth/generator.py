@@ -13,9 +13,9 @@ import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
-try:  # pragma: no cover - optional dependency already pinned but guard defensively
+try:
     from tqdm import tqdm
-except Exception:  # pragma: no cover - tqdm should exist but degrade gracefully
+except Exception:
     tqdm = None
 
 from .config import StarsAnimationConfig
@@ -47,6 +47,7 @@ BUTTON_BORDER = (214, 221, 229, 255)
 STAR_ICON_COLOR = (240, 176, 0, 255)
 AVATAR_PLACEHOLDER = (236, 239, 244, 255)
 DEFAULT_OUTPUT_NAME = "star_growth.mp4"
+DEFAULT_GIF_OUTPUT_NAME = "star_growth.gif"
 
 
 def vertical_gradient(size, top_color, bottom_color):
@@ -126,7 +127,7 @@ def prefetch_avatars(urls: Sequence[str], config: StarsAnimationConfig) -> Dict[
             url = future_map[future]
             try:
                 cache[url] = future.result()
-            except Exception as exc:  # pragma: no cover - defensive catch
+            except Exception as exc:
                 print(f"Warning: avatar fetch failed for {url}: {exc}")
                 cache[url] = None
     return cache
@@ -141,10 +142,12 @@ def _is_directory_hint(raw_path: str) -> bool:
         return False
 
 
-def _ensure_extension(path: Path) -> Path:
+def _ensure_extension(path: Path, suffix: str) -> Path:
     if path.suffix:
         return path
-    return path.with_suffix(".mp4")
+    if not suffix.startswith("."):
+        suffix = "." + suffix
+    return path.with_suffix(suffix)
 
 
 def _unique_output_path(base_path: Path) -> Path:
@@ -164,14 +167,30 @@ def _unique_output_path(base_path: Path) -> Path:
 
 
 def resolve_output_path(config: StarsAnimationConfig) -> Path:
-    raw = config.output or DEFAULT_OUTPUT_NAME
+    desired_format = config.normalized_output_format
+    default_name = (
+        DEFAULT_OUTPUT_NAME if desired_format == "mp4" else DEFAULT_GIF_OUTPUT_NAME
+    )
+
+    raw = config.output or default_name
     path = Path(raw).expanduser()
 
     if _is_directory_hint(raw):
-        path = path / DEFAULT_OUTPUT_NAME
+        path = path / default_name
     elif not path.suffix:
-        path = _ensure_extension(path)
+        path = _ensure_extension(path, f".{desired_format}")
 
+    suffix = path.suffix.lower()
+    if suffix in {".mp4", ".gif"}:
+        resolved_format = suffix.lstrip(".")
+    else:
+        path = path.with_suffix(f".{desired_format}")
+        resolved_format = desired_format
+
+    if resolved_format == "gif" and path.name == DEFAULT_OUTPUT_NAME:
+        path = path.with_name(DEFAULT_GIF_OUTPUT_NAME)
+
+    config.output_format = resolved_format
     parent = path.parent if str(path.parent) else Path(".")
     os.makedirs(parent, exist_ok=True)
     return _unique_output_path(path)
@@ -179,6 +198,39 @@ def resolve_output_path(config: StarsAnimationConfig) -> Path:
 
 def _final_star_count(current_stars: int) -> int:
     return max(0, current_stars)
+
+
+def _parse_github_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _filter_stargazers_by_date(
+    stargazers: Sequence[dict],
+    start_dt: datetime | None,
+    end_dt: datetime | None,
+) -> List[dict]:
+    if not start_dt and not end_dt:
+        return list(stargazers)
+
+    filtered: List[dict] = []
+    for sg in stargazers:
+        ts = _parse_github_timestamp(sg.get("starred_at"))
+        if ts is None:
+            if start_dt or end_dt:
+                continue
+            filtered.append(sg)
+            continue
+        if start_dt and ts < start_dt:
+            continue
+        if end_dt and ts > end_dt:
+            continue
+        filtered.append(sg)
+    return filtered
 
 
 def build_entries(stargazers: Sequence[dict], current_stars: int, config: StarsAnimationConfig):
@@ -236,7 +288,12 @@ def generate_scrolling_stars(config: StarsAnimationConfig) -> str:
     frame_files: List[str] = []
     session = requests.Session()
     created_temp_dir = config.frames_dir is None
-    desired_output = Path(config.output or DEFAULT_OUTPUT_NAME).expanduser()
+    desired_default = (
+        DEFAULT_OUTPUT_NAME
+        if config.normalized_output_format == "mp4"
+        else DEFAULT_GIF_OUTPUT_NAME
+    )
+    desired_output = Path(config.output or desired_default).expanduser()
     final_output_path = resolve_output_path(config)
 
     try:
@@ -247,6 +304,9 @@ def generate_scrolling_stars(config: StarsAnimationConfig) -> str:
             print(f"Warning: {exc}. Falling back to synthetic data.")
             current_stars, stargazers = _fallback_entries(config)
 
+        stargazers = _filter_stargazers_by_date(
+            stargazers, config.start_at_utc, config.end_at_utc
+        )
         entries = build_entries(stargazers, current_stars, config)
         num_entries = len(entries) or 1
         start_stars = 0
@@ -570,12 +630,16 @@ def generate_scrolling_stars(config: StarsAnimationConfig) -> str:
             if use_progress and hasattr(iterator, "close"):
                 iterator.close()
 
-        print("Building video with", len(frame_files), "frames...")
+        print("Building animation with", len(frame_files), "frames...")
         clip = ImageSequenceClip(frame_files, fps=fps)
-        clip.write_videofile(str(final_output_path), codec="libx264")
+        suffix = final_output_path.suffix.lower()
+        if suffix == ".gif":
+            clip.write_gif(str(final_output_path), fps=fps, loop=True)
+        else:
+            clip.write_videofile(str(final_output_path), codec="libx264")
         clip.close()
         if final_output_path != desired_output:
-            requested = config.output or DEFAULT_OUTPUT_NAME
+            requested = config.output or desired_default
             print(
                 f"Wrote {final_output_path} (resolved from requested '{requested}')")
         else:
