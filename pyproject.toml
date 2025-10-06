@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "star-growth"
+dynamic = ["version"]
+description = "Turn your GitHub star growth into a scrolling video."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Esubalew Chekol" }]
+license = { file = "LICENSE" }
+keywords = ["github", "stars", "video", "animation", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = [
+    "requests>=2.32,<3",
+    "Pillow>=10.0,<12",
+    "moviepy>=2.0,<3",
+    "tqdm>=4.65,<5",
+    "imageio>=2.35,<3",
+    "imageio-ffmpeg>=0.4,<1",
+    "numpy>=1.26,<3",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4"]
+
+[project.scripts]
+star-growth = "star_growth.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/esubalew/star-growth"
+Repository = "https://github.com/esubalew/star-growth"
+"Bug Tracker" = "https://github.com/esubalew/star-growth/issues"
+License = "https://github.com/esubaalew/star-growth/blob/main/LICENSE"
+
+[tool.hatch.version]
+path = "star_growth/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["star_growth"]
+
+[tool.hatch.build.targets.sdist]
+include = ["star_growth", "README.md", "requirements.txt", "LICENSE"]
