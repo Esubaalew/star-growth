@@ -88,10 +88,6 @@ pytest
 
 The editable install keeps the CLI (`star-growth`) in sync with your workspace changes.
 
-## Release automation
-
-Tags that follow the `v*` pattern trigger the `Release` GitHub Actions workflow. To publish to PyPI, add a repository secret named `PYPI_API_TOKEN` containing an API token created in your PyPI account ("Publish" scope). The workflow will build the wheel and source tarball and upload them to https://pypi.org/project/star-growth/.
-
 ## Troubleshooting
 
 - **Missing avatars** – GitHub occasionally rate-limits avatar requests; initials placeholders are rendered when that happens.
